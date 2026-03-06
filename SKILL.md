@@ -5,13 +5,14 @@ description: Use when Codex needs to open a 飞书 wiki/base link, inspect a 多
 
 # Feishu Bitable Bridge
 
-Use this skill to take over a Feishu bitable from a wiki/base link with the user's browser login session.
+Use this skill to take over a Feishu bitable from a wiki/base link with the user's browser login session, keep the Feishu strategy library clean, and export a GitHub mirror.
 
 ## When To Use
 
 - The user gives a Feishu `wiki` or `base` link and wants the table schema or records.
 - The user wants to inspect field names, primary field, table id, view id, or visible records.
 - The user wants to upsert rows safely into a Feishu bitable after reviewing a dry-run preview.
+- The user wants to restructure a Feishu strategy library, fill empty strategy fields, or mirror the current library to GitHub.
 
 ## Workflow
 
@@ -46,7 +47,25 @@ Generate seed payloads for `策略主表`、`任务场景子表`、`GitHub仓库
 python3 /Users/liming/.codex/skills/feishu-bitable-bridge/scripts/feishu_bitable_bridge.py build-library-seeds --materials-file materials-inspect.json --github-file github-inspect.json
 ```
 
-The strategy seed now includes `策略名称-CN`, a curated Chinese rendering of the strategy name. Future sync runs will keep this field updated.
+The strategy seed now includes:
+- `策略名称-CN`
+- `适用输入`
+- `预期输出`
+- `不适用条件`
+
+These fields are generated as machine suggestions. Sync keeps strong fact fields current, fills empty human fields conservatively, and does not overwrite `策略负责人`.
+
+Mirror the current 5-table library into structured files for GitHub review:
+
+```bash
+python3 /Users/liming/.codex/skills/feishu-bitable-bridge/scripts/feishu_bitable_bridge.py export-library-mirror --app-token 'Q7vvbO8rHauu1asY4J4cZAEcn6e'
+```
+
+Publish that mirror into a git repo and commit it:
+
+```bash
+python3 /Users/liming/.codex/skills/feishu-bitable-bridge/scripts/feishu_bitable_bridge.py publish-library-mirror --mirror-dir exports/feishu-strategy-library --repo-dir /path/to/repo --commit-only
+```
 
 Generate a safe preview for upsert:
 
@@ -74,6 +93,8 @@ python3 /Users/liming/.codex/skills/feishu-bitable-bridge/scripts/feishu_bitable
 - Raw probe output: `artifacts/feishu-bitable-bridge/probe-*.json`
 - Library blueprint: `artifacts/feishu-bitable-bridge/library-blueprint-*.json` and `.md`
 - Library seeds: `artifacts/feishu-bitable-bridge/library-seeds-*/`
+- Library mirror export: `exports/feishu-strategy-library/` plus `artifacts/feishu-bitable-bridge/library-mirror-export-*.json`
+- Mirror publish result: `artifacts/feishu-bitable-bridge/library-mirror-publish-*.json`
 - Upsert preview: `artifacts/feishu-bitable-bridge/upsert-preview-*.json`
 - Apply result: `artifacts/feishu-bitable-bridge/upsert-apply-*.json`
 
@@ -82,3 +103,4 @@ python3 /Users/liming/.codex/skills/feishu-bitable-bridge/scripts/feishu_bitable
 - Read `references/payload-format.md` for payload rules and preview semantics.
 - Read `references/write-mode.md` when the user asks how writes are committed or what constraints apply.
 - Read `references/library-restructure.md` when the user wants to redesign a Feishu strategy library around strategy, GitHub, skill pattern, and transcript tables.
+- Read `references/strategy-name-overrides.json` when the user wants to fine-tune Chinese strategy names without editing code.
