@@ -26,6 +26,7 @@ DEFAULT_ARTIFACT_DIR = Path.cwd() / "artifacts" / "feishu-bitable-bridge"
 DEFAULT_TIMEOUT_SECONDS = 300
 DEFAULT_WAIT_SECONDS = 10
 FEISHU_OPENAPI_BASE = "https://open.feishu.cn"
+FEISHU_TEXT_FIELD_TYPE = 1
 
 
 def now_stamp() -> str:
@@ -146,6 +147,133 @@ def fetch_tenant_access_token(app_id: str, app_secret: str) -> str:
     if not token:
         raise RuntimeError(f"Failed to obtain tenant_access_token: {json.dumps(data, ensure_ascii=False)}")
     return token
+
+
+def openapi_headers(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+def require_openapi_success(data: dict[str, Any], context: str) -> dict[str, Any]:
+    if data.get("code", 0) not in (0, None):
+        raise RuntimeError(f"{context} failed: {json.dumps(data, ensure_ascii=False)}")
+    return data.get("data") or {}
+
+
+def paged_get(url: str, headers: dict[str, str], *, item_key: str) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    page_token: Optional[str] = None
+    while True:
+        parsed = parse.urlparse(url)
+        params = parse.parse_qs(parsed.query)
+        if page_token:
+            params["page_token"] = [page_token]
+        params.setdefault("page_size", ["500"])
+        encoded = parse.urlencode({key: values[0] for key, values in params.items()})
+        page_url = parse.urlunparse(parsed._replace(query=encoded))
+        data = require_openapi_success(json_request(page_url, "GET", None, headers), f"GET {page_url}")
+        items.extend(data.get(item_key) or [])
+        if not data.get("has_more"):
+            break
+        page_token = data.get("page_token")
+        if not page_token:
+            break
+    return items
+
+
+def list_bitable_tables(app_token: str, headers: dict[str, str]) -> list[dict[str, Any]]:
+    return paged_get(
+        f"{FEISHU_OPENAPI_BASE}/open-apis/bitable/v1/apps/{app_token}/tables",
+        headers,
+        item_key="items",
+    )
+
+
+def create_bitable_table(app_token: str, table_name: str, headers: dict[str, str]) -> dict[str, Any]:
+    data = json_request(
+        f"{FEISHU_OPENAPI_BASE}/open-apis/bitable/v1/apps/{app_token}/tables",
+        "POST",
+        {"table": {"name": table_name}},
+        headers,
+    )
+    payload = require_openapi_success(data, f"create table {table_name}")
+    return payload.get("table") or payload
+
+
+def list_bitable_fields(app_token: str, table_id: str, headers: dict[str, str]) -> list[dict[str, Any]]:
+    return paged_get(
+        f"{FEISHU_OPENAPI_BASE}/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/fields",
+        headers,
+        item_key="items",
+    )
+
+
+def create_bitable_field(app_token: str, table_id: str, field_name: str, headers: dict[str, str]) -> dict[str, Any]:
+    data = json_request(
+        f"{FEISHU_OPENAPI_BASE}/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/fields",
+        "POST",
+        {"field_name": field_name, "type": FEISHU_TEXT_FIELD_TYPE},
+        headers,
+    )
+    return require_openapi_success(data, f"create field {field_name}")
+
+
+def update_bitable_field(
+    app_token: str,
+    table_id: str,
+    field_id: str,
+    *,
+    field_name: str,
+    headers: dict[str, str],
+) -> dict[str, Any]:
+    data = json_request(
+        f"{FEISHU_OPENAPI_BASE}/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/fields/{field_id}",
+        "PUT",
+        {"field_name": field_name},
+        headers,
+    )
+    return require_openapi_success(data, f"update field {field_name}")
+
+
+def list_bitable_records(app_token: str, table_id: str, headers: dict[str, str]) -> list[dict[str, Any]]:
+    return paged_get(
+        f"{FEISHU_OPENAPI_BASE}/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/records",
+        headers,
+        item_key="items",
+    )
+
+
+def batch_create_bitable_records(
+    app_token: str,
+    table_id: str,
+    rows: list[dict[str, Any]],
+    headers: dict[str, str],
+) -> dict[str, Any]:
+    payload = {"records": [{"fields": row} for row in rows]}
+    data = json_request(
+        f"{FEISHU_OPENAPI_BASE}/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/records/batch_create",
+        "POST",
+        payload,
+        headers,
+    )
+    return require_openapi_success(data, f"batch create records for {table_id}")
+
+
+def batch_update_bitable_records(
+    app_token: str,
+    table_id: str,
+    rows: list[dict[str, Any]],
+    headers: dict[str, str],
+) -> dict[str, Any]:
+    payload = {
+        "records": [{"record_id": row["record_id"], "fields": row["fields"]} for row in rows],
+    }
+    data = json_request(
+        f"{FEISHU_OPENAPI_BASE}/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/records/batch_update",
+        "POST",
+        payload,
+        headers,
+    )
+    return require_openapi_success(data, f"batch update records for {table_id}")
 
 
 @dataclass
@@ -535,6 +663,103 @@ def build_library_seed_bundle(materials_summary: FeishuSummary, github_summary: 
     }
 
 
+def rows_to_existing_index(rows: list[dict[str, Any]], primary_field: str) -> tuple[dict[str, dict[str, Any]], set[str]]:
+    existing_by_key: dict[str, dict[str, Any]] = {}
+    duplicate_existing: set[str] = set()
+    for row in rows:
+        key = normalize_compare(row.get(primary_field))
+        if not key:
+            continue
+        if key in existing_by_key:
+            duplicate_existing.add(key)
+        existing_by_key[key] = row
+    return existing_by_key, duplicate_existing
+
+
+def build_upsert_preview_from_rows(
+    *,
+    table_name: str,
+    app_token: str,
+    table_id: str,
+    field_names: list[str],
+    existing_rows: list[dict[str, Any]],
+    payload_rows: list[dict[str, Any]],
+    primary_field: str,
+) -> dict[str, Any]:
+    existing_by_key, duplicate_existing = rows_to_existing_index(existing_rows, primary_field)
+    known_fields = set(field_names)
+    errors: list[dict[str, Any]] = []
+    creates: list[dict[str, Any]] = []
+    updates: list[dict[str, Any]] = []
+    unchanged: list[dict[str, Any]] = []
+    incoming_seen: set[str] = set()
+
+    for index, row in enumerate(payload_rows):
+        row_errors: list[str] = []
+        unknown_fields = sorted(set(row) - known_fields)
+        if unknown_fields:
+            row_errors.append(f"Unknown fields: {', '.join(unknown_fields)}")
+        match_value = normalize_compare(row.get(primary_field))
+        if not match_value:
+            row_errors.append(f"Missing primary field '{primary_field}'")
+        if match_value in incoming_seen:
+            row_errors.append(f"Duplicate incoming primary value '{match_value}'")
+        if match_value in duplicate_existing:
+            row_errors.append(f"Existing records contain duplicate primary value '{match_value}'")
+        if row_errors:
+            errors.append({"index": index, "messages": row_errors, "row": row})
+            continue
+
+        incoming_seen.add(match_value)
+        existing = existing_by_key.get(match_value)
+        filtered_row = {key: row[key] for key in row if key in known_fields}
+        if not existing:
+            creates.append({"index": index, "match_value": match_value, "fields": filtered_row})
+            continue
+
+        changes = []
+        for field_name, new_value in filtered_row.items():
+            old_value = existing.get(field_name, "")
+            if normalize_compare(old_value) != normalize_compare(new_value):
+                changes.append({"field": field_name, "old": old_value, "new": new_value})
+        if changes:
+            updates.append(
+                {
+                    "index": index,
+                    "record_id": existing["record_id"],
+                    "match_value": match_value,
+                    "changes": changes,
+                    "fields": filtered_row,
+                }
+            )
+        else:
+            unchanged.append(
+                {
+                    "index": index,
+                    "record_id": existing["record_id"],
+                    "match_value": match_value,
+                }
+            )
+
+    return {
+        "table_name": table_name,
+        "base": {"obj_token": app_token},
+        "table": {"table_id": table_id, "primary_field": primary_field},
+        "summary": {
+            "creates": len(creates),
+            "updates": len(updates),
+            "unchanged": len(unchanged),
+            "errors": len(errors),
+            "can_apply": len(errors) == 0,
+        },
+        "fields": [{"name": name} for name in field_names],
+        "creates": creates,
+        "updates": updates,
+        "unchanged": unchanged,
+        "errors": errors,
+    }
+
+
 class FeishuBridge:
     def __init__(self, *, state_dir: Path, artifact_dir: Path) -> None:
         self.state_dir = ensure_dir(state_dir)
@@ -817,6 +1042,160 @@ class FeishuBridge:
         write_json(manifest_path, manifest)
         return manifest, manifest_path
 
+    def sync_library_seeds(
+        self,
+        *,
+        manifest_file: Path,
+        app_token: str,
+        app_id: str,
+        app_secret: str,
+        apply_changes: bool,
+    ) -> tuple[dict[str, Any], Path]:
+        manifest = load_json(manifest_file)
+        token = fetch_tenant_access_token(app_id, app_secret)
+        headers = openapi_headers(token)
+        existing_tables = list_bitable_tables(app_token, headers)
+        existing_by_name = {table.get("name"): table for table in existing_tables if table.get("name")}
+        sync_result: dict[str, Any] = {
+            "app_token": app_token,
+            "mode": "apply" if apply_changes else "dry-run",
+            "source_manifest": str(manifest_file.resolve()),
+            "tables": [],
+        }
+
+        for blueprint in LIBRARY_TABLE_BLUEPRINTS:
+            table_name = blueprint["table_name"]
+            primary_field = blueprint["primary_field"]
+            payload_meta = manifest["tables"].get(table_name)
+            if not payload_meta:
+                sync_result["tables"].append(
+                    {"table_name": table_name, "status": "skipped", "reason": "missing from manifest"}
+                )
+                continue
+            payload_rows = load_payload(Path(payload_meta["payload_file"]))
+            desired_fields = list(blueprint["fields"])
+            table = existing_by_name.get(table_name)
+            table_created = False
+            if not table and apply_changes:
+                table = create_bitable_table(app_token, table_name, headers)
+                table_created = True
+                existing_by_name[table_name] = table
+
+            if not table:
+                sync_result["tables"].append(
+                    {
+                        "table_name": table_name,
+                        "status": "missing",
+                        "would_create": True,
+                        "desired_primary_field": primary_field,
+                        "desired_fields": desired_fields,
+                        "preview": {
+                            "summary": {
+                                "creates": len(payload_rows),
+                                "updates": 0,
+                                "unchanged": 0,
+                                "errors": 0,
+                                "can_apply": True,
+                            }
+                        },
+                    }
+                )
+                continue
+
+            table_id = table["table_id"]
+            fields = list_bitable_fields(app_token, table_id, headers)
+            created_fields: list[str] = []
+            renamed_primary_field = False
+            current_field_names = {field.get("field_name") or field.get("name"): field for field in fields}
+
+            primary_exists = primary_field in current_field_names
+            if not primary_exists and fields:
+                default_field = fields[0]
+                default_name = default_field.get("field_name") or default_field.get("name")
+                if table_created and len(fields) == 1 and default_name != primary_field:
+                    if apply_changes:
+                        update_bitable_field(
+                            app_token,
+                            table_id,
+                            default_field["field_id"],
+                            field_name=primary_field,
+                            headers=headers,
+                        )
+                    renamed_primary_field = True
+
+            if apply_changes and (table_created or renamed_primary_field):
+                fields = list_bitable_fields(app_token, table_id, headers)
+                current_field_names = {field.get("field_name") or field.get("name"): field for field in fields}
+
+            missing_fields = [field_name for field_name in desired_fields if field_name not in current_field_names]
+            if apply_changes:
+                for field_name in missing_fields:
+                    create_bitable_field(app_token, table_id, field_name, headers)
+                    created_fields.append(field_name)
+                if missing_fields:
+                    fields = list_bitable_fields(app_token, table_id, headers)
+
+            field_names = [field.get("field_name") or field.get("name") for field in fields]
+            field_names_for_preview = list(dict.fromkeys(field_names + desired_fields))
+            existing_records_raw = list_bitable_records(app_token, table_id, headers)
+            existing_rows = []
+            for record in existing_records_raw:
+                flattened = {"record_id": record["record_id"]}
+                for field_name, value in (record.get("fields") or {}).items():
+                    flattened[field_name] = flatten_value(value)
+                existing_rows.append(flattened)
+
+            preview = build_upsert_preview_from_rows(
+                table_name=table_name,
+                app_token=app_token,
+                table_id=table_id,
+                field_names=field_names_for_preview,
+                existing_rows=existing_rows,
+                payload_rows=payload_rows,
+                primary_field=primary_field,
+            )
+
+            create_batches: list[dict[str, Any]] = []
+            update_batches: list[dict[str, Any]] = []
+            if apply_changes and preview["summary"]["can_apply"]:
+                for start in range(0, len(preview["creates"]), 500):
+                    batch = preview["creates"][start : start + 500]
+                    if batch:
+                        response = batch_create_bitable_records(
+                            app_token,
+                            table_id,
+                            [item["fields"] for item in batch],
+                            headers,
+                        )
+                        create_batches.append({"count": len(batch), "response": response})
+                for start in range(0, len(preview["updates"]), 500):
+                    batch = preview["updates"][start : start + 500]
+                    if batch:
+                        response = batch_update_bitable_records(app_token, table_id, batch, headers)
+                        update_batches.append({"count": len(batch), "response": response})
+
+            sync_result["tables"].append(
+                {
+                    "table_name": table_name,
+                    "table_id": table_id,
+                    "status": "applied" if apply_changes and preview["summary"]["can_apply"] else "planned",
+                    "table_created": table_created,
+                    "renamed_primary_field": renamed_primary_field,
+                    "created_fields": created_fields if apply_changes else missing_fields,
+                    "preview": preview,
+                    "apply_result": {
+                        "create_batches": create_batches,
+                        "update_batches": update_batches,
+                    }
+                    if apply_changes and preview["summary"]["can_apply"]
+                    else None,
+                }
+            )
+
+        output_path = self.artifact_dir / f"library-sync-{now_stamp()}.json"
+        write_json(output_path, sync_result)
+        return sync_result, output_path
+
     def _inspect_internal(
         self,
         *,
@@ -955,6 +1334,18 @@ def build_parser() -> argparse.ArgumentParser:
     seeds_cmd.add_argument("--materials-file", required=True)
     seeds_cmd.add_argument("--github-file", required=True)
 
+    sync_cmd = subparsers.add_parser(
+        "sync-library-seeds",
+        help="Dry-run or apply the 5-table library seed bundle to a Feishu bitable base via OpenAPI.",
+    )
+    sync_cmd.add_argument("--manifest-file", required=True)
+    sync_cmd.add_argument("--app-token", required=True)
+    sync_cmd.add_argument("--app-id-env", default="FEISHU_APP_ID")
+    sync_cmd.add_argument("--app-secret-env", default="FEISHU_APP_SECRET")
+    sync_mode = sync_cmd.add_mutually_exclusive_group(required=True)
+    sync_mode.add_argument("--dry-run", action="store_true")
+    sync_mode.add_argument("--apply", action="store_true")
+
     upsert_cmd = subparsers.add_parser("upsert-records", help="Preview or apply record upserts from JSON payload.")
     upsert_cmd.add_argument("--link", required=True)
     upsert_cmd.add_argument("--payload-file", required=True)
@@ -1024,6 +1415,24 @@ def main(argv: Optional[list[str]] = None) -> int:
         )
         manifest["manifest_path"] = str(manifest_path)
         print(json.dumps(manifest, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "sync-library-seeds":
+        app_id = os.environ.get(args.app_id_env)
+        app_secret = os.environ.get(args.app_secret_env)
+        if not app_id or not app_secret:
+            raise RuntimeError(
+                f"sync-library-seeds requires {args.app_id_env} and {args.app_secret_env} in the environment"
+            )
+        result, output_path = bridge.sync_library_seeds(
+            manifest_file=Path(args.manifest_file).expanduser().resolve(),
+            app_token=args.app_token,
+            app_id=app_id,
+            app_secret=app_secret,
+            apply_changes=args.apply,
+        )
+        result["output_path"] = str(output_path)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
 
     preview, preview_path = bridge.build_upsert_preview(
