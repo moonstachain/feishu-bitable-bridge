@@ -1,0 +1,4 @@
+interface:
+  display_name: Feishu Bitable Bridge
+  short_description: Inspect Feishu bitable links and safely preview or apply row upserts.
+  default_prompt: Use $feishu-bitable-bridge to inspect a Feishu bitable link or safely upsert rows after a dry-run preview.

@@ -1,0 +1,67 @@
+---
+name: feishu-bitable-bridge
+description: Use when Codex needs to open a 飞书 wiki/base link, inspect a 多维表, extract fields and records, or safely upsert rows after showing a preview. Trigger this skill for requests about 飞书多维表、飞书链接抓取、读取飞书表、写入飞书表、或把内容同步到飞书多维表.
+---
+
+# Feishu Bitable Bridge
+
+Use this skill to take over a Feishu bitable from a wiki/base link with the user's browser login session.
+
+## When To Use
+
+- The user gives a Feishu `wiki` or `base` link and wants the table schema or records.
+- The user wants to inspect field names, primary field, table id, view id, or visible records.
+- The user wants to upsert rows safely into a Feishu bitable after reviewing a dry-run preview.
+
+## Workflow
+
+1. Reuse the persistent Chrome profile stored in `state/browser-profile`.
+2. Open the Feishu link. If the session is not logged in, let the user finish login in the browser window.
+3. Read `client_vars` and the page runtime to recover:
+   - `obj_token`
+   - `table_id`
+   - `view_id`
+   - fields
+   - records
+4. For writes, always run `upsert-records --dry-run` first.
+5. Only run `--apply` after the user explicitly confirms the preview.
+
+## Commands
+
+Inspect a link and export schema plus records:
+
+```bash
+python3 /Users/liming/.codex/skills/feishu-bitable-bridge/scripts/feishu_bitable_bridge.py inspect-link --link 'https://h52xu4gwob.feishu.cn/wiki/...' --limit 5
+```
+
+Generate a safe preview for upsert:
+
+```bash
+python3 /Users/liming/.codex/skills/feishu-bitable-bridge/scripts/feishu_bitable_bridge.py upsert-records --link 'https://h52xu4gwob.feishu.cn/wiki/...' --primary-field '文本' --payload-file records.json --dry-run
+```
+
+Apply the upsert after confirmation:
+
+```bash
+python3 /Users/liming/.codex/skills/feishu-bitable-bridge/scripts/feishu_bitable_bridge.py upsert-records --link 'https://h52xu4gwob.feishu.cn/wiki/...' --primary-field '文本' --payload-file records.json --apply
+```
+
+## Safety Rules
+
+- Never write before showing a preview.
+- Treat `--apply` as a second explicit step, not a default.
+- Do not delete records in this skill.
+- If the primary field cannot be resolved, stop and report the issue.
+- If duplicate primary values make matching ambiguous, stop and report the issue.
+
+## Expected Outputs
+
+- Inspect output: `artifacts/feishu-bitable-bridge/inspect-*.json`
+- Raw probe output: `artifacts/feishu-bitable-bridge/probe-*.json`
+- Upsert preview: `artifacts/feishu-bitable-bridge/upsert-preview-*.json`
+- Apply result: `artifacts/feishu-bitable-bridge/upsert-apply-*.json`
+
+## Notes
+
+- Read `references/payload-format.md` for payload rules and preview semantics.
+- Read `references/write-mode.md` when the user asks how writes are committed or what constraints apply.
