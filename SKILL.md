@@ -46,6 +46,8 @@ Generate seed payloads for `策略主表`、`任务场景子表`、`GitHub仓库
 python3 /Users/liming/.codex/skills/feishu-bitable-bridge/scripts/feishu_bitable_bridge.py build-library-seeds --materials-file materials-inspect.json --github-file github-inspect.json
 ```
 
+The strategy seed now includes `策略名称-CN`, a curated Chinese rendering of the strategy name. Future sync runs will keep this field updated.
+
 Generate a safe preview for upsert:
 
 ```bash

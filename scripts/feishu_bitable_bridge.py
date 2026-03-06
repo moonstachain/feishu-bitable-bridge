@@ -28,6 +28,59 @@ DEFAULT_WAIT_SECONDS = 10
 FEISHU_OPENAPI_BASE = "https://open.feishu.cn"
 FEISHU_TEXT_FIELD_TYPE = 1
 
+STRATEGY_CN_NAME_OVERRIDES = {
+    "youquant-backtest": "优宽回测策略执行",
+    "get-biji-tra": "Get笔记逐字稿提取",
+    "Get笔记逐字稿": "Get笔记逐字稿提取",
+    "quant-factor-dashboard": "量化因子策略看板",
+    "ai-news-aggregator": "AI 资讯聚合器",
+    "obsidian-image-hosting": "Obsidian 图床托管",
+    "quant-workspace": "量化研究工作台",
+    "CAUSAL_AI_MVP_1.1": "因果智能最小可行产品 1.1",
+    "ai-news-feishu-collector": "AI 资讯飞书采集器",
+    "ruoyi-vue-pro-raysystem": "若依 Vue Pro Ray 管理系统",
+    "typescript-sdk": "TypeScript 开发套件",
+    "bolt.diy": "Bolt DIY 全栈开发平台",
+    "reflex-llm-examples": "Reflex 大模型示例集",
+    "Resume-Matcher": "简历匹配器",
+}
+
+TOKEN_CN_OVERRIDES = {
+    "ai": "AI",
+    "news": "资讯",
+    "aggregator": "聚合器",
+    "collector": "采集器",
+    "feishu": "飞书",
+    "quant": "量化",
+    "factor": "因子",
+    "dashboard": "看板",
+    "workspace": "工作台",
+    "obsidian": "Obsidian",
+    "image": "图像",
+    "hosting": "托管",
+    "host": "托管",
+    "typescript": "TypeScript",
+    "sdk": "开发套件",
+    "resume": "简历",
+    "matcher": "匹配器",
+    "examples": "示例集",
+    "example": "示例",
+    "llm": "大模型",
+    "diy": "DIY",
+    "backtest": "回测",
+    "youquant": "优宽",
+    "causal": "因果",
+    "mvp": "最小可行产品",
+    "ray": "Ray",
+    "system": "系统",
+    "systems": "系统",
+    "pro": "Pro",
+    "vue": "Vue",
+    "ruoyi": "若依",
+    "bolt": "Bolt",
+    "reflex": "Reflex",
+}
+
 
 def now_stamp() -> str:
     return datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -103,6 +156,17 @@ def value_or_blank(row: dict[str, Any], key: str) -> str:
 
 def safe_filename(name: str) -> str:
     return re.sub(r'[\\/:*?"<>|]+', "-", name)
+
+
+def to_strategy_cn_name(strategy_name: str) -> str:
+    if strategy_name in STRATEGY_CN_NAME_OVERRIDES:
+        return STRATEGY_CN_NAME_OVERRIDES[strategy_name]
+    normalized = strategy_name.replace(".", "-").replace("_", "-")
+    parts = [part for part in re.split(r"[-\s]+", normalized) if part]
+    translated_parts: list[str] = []
+    for part in parts:
+        translated_parts.append(TOKEN_CN_OVERRIDES.get(part.lower(), part))
+    return " ".join(translated_parts)
 
 
 def parse_link_params(link: str) -> dict[str, Optional[str]]:
@@ -297,6 +361,7 @@ LIBRARY_TABLE_BLUEPRINTS = [
         "primary_field": "策略ID",
         "fields": [
             "策略名称",
+            "策略名称-CN",
             "策略ID",
             "策略摘要",
             "任务场景",
@@ -557,6 +622,7 @@ def derive_strategy_rows(github_rows: list[dict[str, Any]], material_rows: list[
         rows.append(
             {
                 "策略名称": strategy_name,
+                "策略名称-CN": to_strategy_cn_name(strategy_name),
                 "策略ID": strategy_id,
                 "策略摘要": value_or_blank(row, "Skill摘要") or value_or_blank(row, "仓库说明"),
                 "任务场景": " | ".join(split_scene_values(row.get("适用场景"))),
