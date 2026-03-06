@@ -34,6 +34,18 @@ Inspect a link and export schema plus records:
 python3 /Users/liming/.codex/skills/feishu-bitable-bridge/scripts/feishu_bitable_bridge.py inspect-link --link 'https://h52xu4gwob.feishu.cn/wiki/...' --limit 5
 ```
 
+Generate the 5-table restructuring blueprint from existing exports:
+
+```bash
+python3 /Users/liming/.codex/skills/feishu-bitable-bridge/scripts/feishu_bitable_bridge.py build-library-blueprint --materials-file materials-inspect.json --github-file github-inspect.json
+```
+
+Generate seed payloads for `策略主表`、`任务场景子表`、`GitHub仓库总表`、`Skill Pattern子表`、`素材/逐字稿子表`:
+
+```bash
+python3 /Users/liming/.codex/skills/feishu-bitable-bridge/scripts/feishu_bitable_bridge.py build-library-seeds --materials-file materials-inspect.json --github-file github-inspect.json
+```
+
 Generate a safe preview for upsert:
 
 ```bash
@@ -58,6 +70,8 @@ python3 /Users/liming/.codex/skills/feishu-bitable-bridge/scripts/feishu_bitable
 
 - Inspect output: `artifacts/feishu-bitable-bridge/inspect-*.json`
 - Raw probe output: `artifacts/feishu-bitable-bridge/probe-*.json`
+- Library blueprint: `artifacts/feishu-bitable-bridge/library-blueprint-*.json` and `.md`
+- Library seeds: `artifacts/feishu-bitable-bridge/library-seeds-*/`
 - Upsert preview: `artifacts/feishu-bitable-bridge/upsert-preview-*.json`
 - Apply result: `artifacts/feishu-bitable-bridge/upsert-apply-*.json`
 
@@ -65,3 +79,4 @@ python3 /Users/liming/.codex/skills/feishu-bitable-bridge/scripts/feishu_bitable
 
 - Read `references/payload-format.md` for payload rules and preview semantics.
 - Read `references/write-mode.md` when the user asks how writes are committed or what constraints apply.
+- Read `references/library-restructure.md` when the user wants to redesign a Feishu strategy library around strategy, GitHub, skill pattern, and transcript tables.
