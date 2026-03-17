@@ -1,6 +1,10 @@
 ---
 name: feishu-bitable-bridge
-description: Use when Codex needs to open a 飞书 wiki/base link, inspect a 多维表, extract fields and records, or safely upsert rows after showing a preview. Trigger this skill for requests about 飞书多维表、飞书链接抓取、读取飞书表、写入飞书表、或把内容同步到飞书多维表.
+description: >
+  飞书多维表格（Bitable）的读写桥接层，支持建表、读记录、写记录、更新和批量操作。
+  当需要操作飞书多维表数据、创建新表、批量写入数据、或同步数据到飞书时使用。
+  当用户说"写入飞书"、"更新多维表"、"建一张新表"、"同步到飞书"时使用。
+  NOT for 飞书文档或知识库操作（用 mcp-feishu-read-doc 或 mcp-feishu-read-wiki）。
 ---
 
 # Feishu Bitable Bridge
